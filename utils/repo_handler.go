@@ -27,7 +27,7 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	return err
 }
 
-func RepoToNew(repoPath string, outputPath string) error {
+func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool) error {
 	_, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func RepoToNew(repoPath string, outputPath string) error {
 		}
 
 		// 跳过 .git 目录
-		if strings.HasPrefix(relPath, ".git") {
+		if strings.HasPrefix(relPath, ".git") && !keepGit {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
@@ -78,7 +78,7 @@ func RepoToNew(repoPath string, outputPath string) error {
 		}
 
 		// 跳过 .gitignore 忽略的文件
-		if ign != nil && ign.MatchesPath(relPath) {
+		if ign != nil && ign.MatchesPath(relPath) && !keepIgnore {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
