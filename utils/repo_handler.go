@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"archive/zip"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	return err
 }
 
-func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool, packZip bool) string {
+func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) string {
 	_, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return err.Error()
@@ -45,8 +46,22 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool
 		}
 	}
 
-	if err := os.MkdirAll(outputPath, 0755); err != nil {
-		return err.Error()
+	var zipWriter *zip.Writer
+	var zipFile *os.File
+
+	if packZip {
+		zipFilePath := filepath.Join(filepath.Dir(outputPath), repoName+".zip")
+		zipFile, err = os.Create(zipFilePath)
+		if err != nil {
+			return err.Error()
+		}
+		defer zipFile.Close()
+		zipWriter = zip.NewWriter(zipFile)
+		defer zipWriter.Close()
+	} else {
+		if err := os.MkdirAll(outputPath, 0755); err != nil {
+			return err.Error()
+		}
 	}
 
 	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
@@ -64,7 +79,7 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool
 			return nil
 		}
 
-		// 跳过引用文件
+		// 跳过符号链接
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
@@ -78,27 +93,52 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool
 		}
 
 		// 跳过 .gitignore 忽略的文件
-		if ign != nil && ign.MatchesPath(relPath) && !keepIgnore {
+		if ign != nil && ign.MatchesPath(relPath) {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// 复制文件
-		destPath := filepath.Join(outputPath, relPath)
+		if packZip {
+			if info.IsDir() {
+				// zip 中的目录条目
+				_, err := zipWriter.Create(relPath + "/")
+				return err
+			}
 
-		if info.IsDir() {
-			// 创建对应的目标目录
-			return os.MkdirAll(destPath, info.Mode())
-		}
+			// 普通文件
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
 
-		// 复制文件
-		if err := copyFile(path, destPath, info.Mode()); err != nil {
+			header, err := zip.FileInfoHeader(info)
+			if err != nil {
+				return err
+			}
+
+			header.Name = relPath
+			header.Method = zip.Deflate
+
+			writer, err := zipWriter.CreateHeader(header)
+			if err != nil {
+				return err
+			}
+
+			_, err = io.Copy(writer, file)
 			return err
 		}
 
-		return nil
+		// --- 普通复制模式 ---
+		destPath := filepath.Join(outputPath, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		return copyFile(path, destPath, info.Mode())
 	})
 
 	if err != nil {

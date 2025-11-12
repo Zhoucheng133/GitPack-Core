@@ -5,15 +5,18 @@ import (
 
 	"C"
 )
+import "fmt"
 
 //export RepoToNew
-func RepoToNew(repoPath *C.char, outputPath *C.char, keepGit C.int, keepIgnore C.int) C.int {
-	err := utils.RepoToNew(C.GoString(repoPath), C.GoString(outputPath), int(keepGit) != 0, int(keepIgnore) != 0)
-
-	if err != nil {
-		return 1
-	}
-	return 0
+func RepoToNew(repoPath *C.char, outputPath *C.char, keepGit C.int) *C.char {
+	return C.CString(utils.RepoToNew(C.GoString(repoPath), C.GoString(outputPath), int(keepGit) != 0, false))
 }
 
-func main() {}
+//export RepoToZip
+func RepoToZip(repoPath *C.char, outputPath *C.char, keepGit C.int) *C.char {
+	return C.CString(utils.RepoToNew(C.GoString(repoPath), C.GoString(outputPath), int(keepGit) != 0, true))
+}
+
+func main() {
+	fmt.Println(utils.RepoToNew("/Users/zhoucheng/Desktop/Develop/DAV-Server", "/Users/zhoucheng/Downloads", false, false))
+}
