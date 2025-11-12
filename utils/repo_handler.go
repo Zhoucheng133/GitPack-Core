@@ -27,10 +27,10 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	return err
 }
 
-func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool) error {
+func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool, packZip bool) string {
 	_, err := git.PlainOpen(repoPath)
 	if err != nil {
-		return err
+		return err.Error()
 	}
 
 	repoName := filepath.Base(repoPath)
@@ -41,12 +41,12 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool
 	if _, err := os.Stat(gitignorePath); err == nil {
 		ign, err = ignore.CompileIgnoreFile(gitignorePath)
 		if err != nil {
-			return err
+			return err.Error()
 		}
 	}
 
 	if err := os.MkdirAll(outputPath, 0755); err != nil {
-		return err
+		return err.Error()
 	}
 
 	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
@@ -102,8 +102,8 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, keepIgnore bool
 	})
 
 	if err != nil {
-		return err
+		return err.Error()
 	}
 
-	return nil
+	return "Ok"
 }
