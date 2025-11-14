@@ -28,6 +28,21 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	return err
 }
 
+func RepoCheck(repoPath string) int {
+	_, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return 0
+	}
+	gitignorePath := filepath.Join(repoPath, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err == nil {
+		_, err = ignore.CompileIgnoreFile(gitignorePath)
+		if err != nil {
+			return 0
+		}
+	}
+	return 1
+}
+
 func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) string {
 	_, err := git.PlainOpen(repoPath)
 	if err != nil {
