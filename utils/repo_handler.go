@@ -118,7 +118,8 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) s
 		if packZip {
 			if info.IsDir() {
 				// zip 中的目录条目
-				_, err := zipWriter.Create(relPath + "/")
+				zippedDir := filepath.Join(repoName, relPath) + "/"
+				_, err := zipWriter.Create(zippedDir)
 				return err
 			}
 
@@ -134,7 +135,7 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) s
 				return err
 			}
 
-			header.Name = relPath
+			header.Name = filepath.Join(repoName, relPath)
 			header.Method = zip.Deflate
 
 			writer, err := zipWriter.CreateHeader(header)
