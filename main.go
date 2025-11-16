@@ -5,7 +5,6 @@ import (
 
 	"C"
 )
-import "fmt"
 
 //export RepoToNew
 func RepoToNew(repoPath *C.char, outputPath *C.char, keepGit C.int) *C.char {
@@ -23,5 +22,6 @@ func RepoCheck(repoPath *C.char) C.int {
 }
 
 func main() {
-	fmt.Println(utils.RepoCheck("/Users/zhoucheng/Desktop/Develop"))
+	// fmt.Println(utils.RepoCheck("/Users/zhoucheng/Desktop/Develop"))
+	utils.RepoToNew("/Users/zhoucheng/Desktop/Develop/bit_flow", "/Users/zhoucheng/Downloads", true, true)
 }
