@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"archive/zip"
 	"io"
 	"os"
 	"path/filepath"
@@ -108,12 +109,21 @@ func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) s
 		return err.Error()
 	}
 
-	// 如果 keepGit 为 true，需要单独复制 .git 文件夹
 	if keepGit {
 		gitSrc := filepath.Join(repoPath, ".git")
 		gitDst := filepath.Join(targetRoot, ".git")
 		err := copyDir(gitSrc, gitDst)
 		if err != nil {
+			return err.Error()
+		}
+	}
+
+	if packZip {
+		zipPath := filepath.Join(outputPath, repoName+".zip")
+		if err := zipDir(targetRoot, zipPath, repoName); err != nil {
+			return err.Error()
+		}
+		if err := os.RemoveAll(targetRoot); err != nil {
 			return err.Error()
 		}
 	}
@@ -140,5 +150,61 @@ func copyDir(srcDir, dstDir string) error {
 		}
 
 		return copyFile(path, dstPath, info.Mode())
+	})
+}
+
+func zipDir(srcDir, zipPath, rootName string) error {
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		// 加入<repoName>根目录
+		zipPath := filepath.Join(rootName, relPath)
+		zipPath = strings.ReplaceAll(zipPath, "\\", "/")
+
+		if info.IsDir() {
+			if zipPath != "" {
+				_, err := zipWriter.Create(zipPath + "/")
+				return err
+			}
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+
+		header.Name = zipPath
+		header.Method = zip.Deflate
+
+		writer, err := zipWriter.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(writer, file)
+		return err
 	})
 }
