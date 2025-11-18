@@ -1,32 +1,14 @@
 package utils
 
 import (
-	"archive/zip"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	ignore "github.com/sabhiram/go-gitignore"
 )
-
-func copyFile(src, dst string, perm os.FileMode) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
-}
 
 func RepoCheck(repoPath string) int {
 	_, err := git.PlainOpen(repoPath)
@@ -43,121 +25,71 @@ func RepoCheck(repoPath string) int {
 	return 1
 }
 
+func copyFile(src, dst string, perm os.FileMode) error {
+	// 打开源文件
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	// 创建目标目录
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	// 创建目标文件
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// 拷贝内容
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+
+	// 强制写入
+	return out.Sync()
+}
+
 func RepoToNew(repoPath string, outputPath string, keepGit bool, packZip bool) string {
-	_, err := git.PlainOpen(repoPath)
+
+	repoName := filepath.Base(repoPath)
+
+	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return err.Error()
 	}
 
-	repoName := filepath.Base(repoPath)
-	outputPath = filepath.Join(outputPath, repoName)
-
-	var ign *ignore.GitIgnore
-	gitignorePath := filepath.Join(repoPath, ".gitignore")
-	if _, err := os.Stat(gitignorePath); err == nil {
-		ign, err = ignore.CompileIgnoreFile(gitignorePath)
-		if err != nil {
-			return err.Error()
-		}
+	// 获取 HEAD
+	headRef, err := repo.Head()
+	if err != nil {
+		return err.Error()
 	}
 
-	var zipWriter *zip.Writer
-	var zipFile *os.File
-
-	if packZip {
-		zipFilePath := filepath.Join(filepath.Dir(outputPath), repoName+".zip")
-		zipFile, err = os.Create(zipFilePath)
-		if err != nil {
-			return err.Error()
-		}
-		defer zipFile.Close()
-		zipWriter = zip.NewWriter(zipFile)
-		defer zipWriter.Close()
-	} else {
-		if err := os.MkdirAll(outputPath, 0755); err != nil {
-			return err.Error()
-		}
+	commit, err := repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return err.Error()
 	}
 
-	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	tree, err := commit.Tree()
+	if err != nil {
+		return err.Error()
+	}
+
+	// 遍历 Git 记录的所有文件（等价于 git ls-files）
+	err = tree.Files().ForEach(func(f *object.File) error {
+		src := filepath.Join(repoPath, f.Name)
+		dst := filepath.Join(outputPath, f.Name)
+
+		info, err := os.Stat(src)
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(repoPath, path)
-		if err != nil {
-			return err
-		}
-
-		// 跳过根目录
-		if relPath == "." {
-			return nil
-		}
-
-		// 跳过符号链接
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		// 跳过 .git 目录
-		if strings.HasPrefix(relPath, ".git") && !keepGit {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// 跳过 .gitignore 忽略的文件
-		if ign != nil && ign.MatchesPath(relPath) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if packZip {
-			if info.IsDir() {
-				// zip 中的目录条目
-				zipDir := repoName + "/" + relPath + "/"
-				zipDir = strings.ReplaceAll(zipDir, "\\", "/")
-				_, err := zipWriter.Create(zipDir)
-				return err
-			}
-
-			// 普通文件
-			file, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			header, err := zip.FileInfoHeader(info)
-			if err != nil {
-				return err
-			}
-
-			zipPath := repoName + "/" + relPath
-			zipPath = strings.ReplaceAll(zipPath, "\\", "/")
-			header.Name = zipPath
-			header.Method = zip.Deflate
-
-			writer, err := zipWriter.CreateHeader(header)
-			if err != nil {
-				return err
-			}
-
-			_, err = io.Copy(writer, file)
-			return err
-		}
-
-		// --- 普通复制模式 ---
-		destPath := filepath.Join(outputPath, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(destPath, info.Mode())
-		}
-
-		return copyFile(path, destPath, info.Mode())
+		return copyFile(src, dst, info.Mode())
 	})
 
 	if err != nil {
